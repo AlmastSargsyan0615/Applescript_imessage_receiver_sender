@@ -1,0 +1,121 @@
+
+set SENDER_PHONENUMBER to "+1234567890"
+set RECEIVER1_EMAIL to "receiver1@gmail.com"
+set RECEIVER2_EMAIL to "receiver2@gmail.com"
+set RECEIVER1_PHONENUMBER to "+0987654321"
+set RECEIVER2_PHONENUMBER to "+1357924680"
+
+set KEYWORD1 to "AAA"
+set KEYWORD2 to "BBB"
+set PERIOD to 600
+set flag_done to false
+
+set RECEIVER1_PHONENUMBER_noContain_message to "" & SENDER_PHONENUMBER & " says 
+"
+set RECEIVER2_PHONENUMBER_noContain_message to "" & SENDER_PHONENUMBER & " says 
+"
+set RECEIVER1_EMAIL_noContain_mail_subject to "Keywords " & KEYWORD1 & " or " & KEYWORD2 & " were not present."
+set RECEIVER2_EMAIL_noContain_mail_subject to "Keywords " & KEYWORD1 & " or " & KEYWORD2 & " were not present."
+set RECEIVER1_EMAIL_noContain_mail_content to ""
+set RECEIVER2_EMAIL_noContain_mail_content to ""
+
+set SENDER_PHONENUMBER_noReceived_message to "Just a reminder to please send us a message. Thanks."
+set RECEIVER1_PHONENUMBER_noReceived_message to "No response from " & SENDER_PHONENUMBER
+set RECEIVER2_PHONENUMBER_noReceived_message to "No response from " & SENDER_PHONENUMBER
+set RECEIVER1_EMAIL_noReceived_mail_subject to "No response from " & SENDER_PHONENUMBER
+set RECEIVER2_EMAIL_noReceived_mail_subject to "No response from " & SENDER_PHONENUMBER
+set RECEIVER1_EMAIL_noReceived_mail_content to "No response from" & SENDER_PHONENUMBER
+set RECEIVER2_EMAIL_noReceived_mail_content to "No response from" & SENDER_PHONENUMBER
+
+-- Call the handler to get the Unix timestamp
+set unixTimestamp2001 to getUnixTimestamp2001()
+
+-- Set the maximum number of times to repeat the loop
+set MAX_REPEATS to 5
+set repeatCount to 0
+
+-- Define the main loop
+repeat until repeatCount is greater than or equal to MAX_REPEATS
+	-- Wait for 10 minutes before repeating the loop
+	
+	set shellScript to ["sqlite3 -line ~/Library/Messages/chat.db ", ¬
+		"'SELECT date, m.text ", ¬
+		"FROM message m INNER JOIN handle h ON h.ROWID=m.handle_id ", ¬
+		"WHERE m.is_from_me = 0 AND h.id = \"" & SENDER_PHONENUMBER & "\" ", ¬
+		"AND m.date >= " & unixTimestamp2001 & "' | egrep -io -e '\\w+ = .+'"] as text
+	
+	try
+		set resultText to do shell script shellScript
+		
+		if resultText contains KEYWORD1 or resultText contains KEYWORD2 then
+			--display dialog "The source string contains KEYWORDS."
+			set flag_done to true
+		else
+			set textContent to ""
+			-- Split the text into paragraphs
+			set paragraphsList to paragraphs of resultText
+			-- Loop through each paragraph
+			repeat with para in paragraphsList
+				-- Extract the text beside "text = "
+				if para contains "text = " then
+					set paraText to para as string
+					set AppleScript's text item delimiters to "text = "
+					set {_, extractedText} to text items of paraText
+					set textContent to textContent & extractedText
+				end if
+			end repeat
+			
+			set RECEIVER1_PHONENUMBER_noContain_message to RECEIVER1_PHONENUMBER_noContain_message & textContent
+			set RECEIVER2_PHONENUMBER_noContain_message to RECEIVER2_PHONENUMBER_noContain_message & textContent
+			set RECEIVER1_EMAIL_noContain_mail_content to RECEIVER1_EMAIL_noContain_mail_content & textContent
+			set RECEIVER2_EMAIL_noContain_mail_content to RECEIVER2_EMAIL_noContain_mail_content & textContent
+			
+			sendMessage(RECEIVER1_PHONENUMBER, RECEIVER1_PHONENUMBER_noContain_message)
+			sendMessage(RECEIVER2_PHONENUMBER, RECEIVER2_PHONENUMBER_noContain_message)
+			sendEmail(RECEIVER1_EMAIL, RECEIVER1_EMAIL_noReceived_mail_subject, RECEIVER1_EMAIL_noContain_mail_content)
+			sendEmail(RECEIVER2_EMAIL, RECEIVER2_EMAIL_noReceived_mail_subject, RECEIVER2_EMAIL_noContain_mail_content)
+			
+		end if
+		
+		
+	on error errMsg
+		--display dialog "An error occurred: " & errMsg
+		sendMessage(SENDER_PHONENUMBER, SENDER_PHONENUMBER_noReceived_message)
+		sendMessage(RECEIVER1_PHONENUMBER, RECEIVER1_PHONENUMBER_noReceived_message)
+		sendMessage(RECEIVER2_PHONENUMBER, RECEIVER2_PHONENUMBER_noReceived_message)
+		sendEmail(RECEIVER1_EMAIL, RECEIVER1_EMAIL_noReceived_mail_subject, RECEIVER1_EMAIL_noReceived_mail_content)
+		sendEmail(RECEIVER2_EMAIL, RECEIVER2_EMAIL_noReceived_mail_subject, RECEIVER2_EMAIL_noReceived_mail_content)
+		
+	end try
+	
+	delay PERIOD
+	-- Increment the repeat count
+	set repeatCount to repeatCount + 1
+end repeat
+
+-- Define a handler to calculate the Unix timestamp for "Monday, 1 January 2001 at 00:00:00"
+on getUnixTimestamp2001()
+	set referenceDate to date "Monday, 1 January 2001 at 00:00:00"
+	set currentDate to current date
+	set midnight_currentDate to currentDate - (time of currentDate)
+	set unixtimestamp_2001 to ((midnight_currentDate - referenceDate) / days) * 8.64E+13
+	return unixtimestamp_2001
+end getUnixTimestamp2001
+
+on sendMessage(targetBuddyPhone, targetMessage)
+	tell application "Messages"
+		set targetService to 1st account whose service type = iMessage
+		set targetBuddy to participant targetBuddyPhone of targetService
+		send targetMessage to targetBuddy
+	end tell
+end sendMessage
+
+on sendEmail(receiverEmail, emailSubject, emailContent)
+	tell application "Mail"
+		set newMessage to make new outgoing message with properties {subject:emailSubject, content:emailContent, visible:true}
+		tell newMessage
+			make new to recipient at end of to recipients with properties {address:receiverEmail}
+			send
+		end tell
+	end tell
+end sendEmail
